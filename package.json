@@ -1,0 +1,56 @@
+{
+  "name": "@onelo/node",
+  "version": "0.5.0",
+  "description": "Onelo backend SDK for Node.js — verify user tokens, gate features, capture monitor events. Framework adapters for Express, Next.js, Fastify, and Hono.",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    },
+    "./express": {
+      "types": "./dist/express.d.ts",
+      "import": "./dist/express.mjs",
+      "require": "./dist/express.js"
+    },
+    "./next": {
+      "types": "./dist/next.d.ts",
+      "import": "./dist/next.mjs",
+      "require": "./dist/next.js"
+    },
+    "./fastify": {
+      "types": "./dist/fastify.d.ts",
+      "import": "./dist/fastify.mjs",
+      "require": "./dist/fastify.js"
+    },
+    "./hono": {
+      "types": "./dist/hono.d.ts",
+      "import": "./dist/hono.mjs",
+      "require": "./dist/hono.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts src/express.ts src/next.ts src/fastify.ts src/hono.ts --format cjs,esm --dts --clean",
+    "dev": "tsup src/index.ts src/express.ts src/next.ts src/fastify.ts src/hono.ts --format cjs,esm --dts --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.7.0",
+    "tsup": "^8.0.0",
+    "vitest": "^1.6.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
