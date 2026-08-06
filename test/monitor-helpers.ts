@@ -33,7 +33,14 @@ export function monitorFetch(opts: { status?: number; headers?: Record<string, s
     }
     return new Response(null, { status: 404 })
   }
-  return { fetchImpl, batches, allEvents: () => batches.flat(), postCount: () => posts }
+  // `init()` auto-emits one unconditional `session_opened` bootstrap event (see
+  // MonitorClient.init) so Feature Health always has a row even when every
+  // instrumented call site is gated behind auth/paywall/consent. Tests here
+  // assert on the events THEY triggered, so the bootstrap event is filtered
+  // out of `allEvents()` — mirroring onelo-js's test idiom of stripping the
+  // one extra auto-emitted event right after construction.
+  const allEvents = () => batches.flat().filter((e) => e.featureName !== 'session_opened')
+  return { fetchImpl, batches, allEvents, postCount: () => posts }
 }
 
 export function directMonitor(

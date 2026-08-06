@@ -1621,6 +1621,7 @@ var MonitorClient = class {
     if (options.httpBreadcrumbs) {
       this.fetchUninstall = installFetchBreadcrumbs(this, { ignoreUrlPrefix: this.deps.apiUrl });
     }
+    this.emit(makeEvent({ featureName: "session_opened", ok: true, source: "event" }));
   }
   isInitialised() {
     return this.transport !== null;

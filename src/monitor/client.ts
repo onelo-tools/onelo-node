@@ -185,6 +185,15 @@ export class MonitorClient {
     if (options.httpBreadcrumbs) {
       this.fetchUninstall = installFetchBreadcrumbs(this, { ignoreUrlPrefix: this.deps.apiUrl })
     }
+
+    // Auto-emit one unconditional event per init(). A service that gates every
+    // instrumented operation behind auth middleware / a feature flag would
+    // otherwise emit NOTHING on a cold start — the dashboard would look
+    // "not integrated" even though every line of the snippet was followed
+    // correctly. This event needs no gate to exist: it fires the moment the
+    // SDK finishes initialising, so Feature Health always has at least one row.
+    // Parity with onelo-js's constructor-time `session_opened` push.
+    this.emit(makeEvent({ featureName: 'session_opened', ok: true, source: 'event' }))
   }
 
   isInitialised(): boolean {
