@@ -74,8 +74,14 @@ export class PollingConsumer implements FeatureConsumer {
   }
 
   private buildUrl(): string {
+    // The key is NOT here — it travels as the `X-Publishable-Key` request
+    // header (ADR-0003, #105), exactly as sse-consumer.ts sends it on the
+    // stream. `/poll` fires on a timer from a server, so the credential is
+    // typically a Secret Key; in the query string it landed in the reverse
+    // proxy's access.log on every tick, and from 2027-03-31 the backend
+    // refuses `?key=` outright. Sending both would re-arm the Deprecation/
+    // Sunset headers, because the backend resolves `?key=` first.
     const params = new URLSearchParams({
-      key: this.opts.key,
       since_version: String(this.opts.cache.configVersion),
     })
     if (this.opts.featureEnvironment !== null) {
@@ -104,7 +110,7 @@ export class PollingConsumer implements FeatureConsumer {
     try {
       res = await doFetch(this.buildUrl(), {
         method: 'GET',
-        headers: { 'User-Agent': USER_AGENT },
+        headers: { 'User-Agent': USER_AGENT, 'X-Publishable-Key': this.opts.key },
         signal: controller.signal,
       })
     } catch {

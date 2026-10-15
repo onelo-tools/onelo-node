@@ -20,6 +20,7 @@ import { FeaturesClient } from './features/client'
 import { resolveStrategy, type Strategy } from './features/detection'
 import { getInstanceId } from './features/instance'
 import { PollingConsumer } from './features/polling-consumer'
+import { assertSecretKeyForUser } from './features/secret-key'
 import { SseConsumer } from './features/sse-consumer'
 import { USER_AGENT, resolveFetch, type FeatureConsumer } from './features/consumer'
 import { MonitorClient } from './monitor/client'
@@ -66,9 +67,20 @@ export interface AuthClient {
 export interface OneloConfig {
   /** Generic key — classified as secret/publishable by its `_sk_`/`_pk_` prefix. */
   key?: string
-  /** Publishable key (`onelo_pk_*`) — public client identifier. */
+  /**
+   * Publishable key (`onelo_pk_*`) — public client identifier.
+   *
+   * @deprecated A server SDK should hold the secret key: pass `secretKey`
+   * (or `key`). With a publishable key, auth verification refuses to run and
+   * per-user Features calls (`features.forUser()`, `identify(userId)`) throw.
+   * Still accepted so existing code keeps compiling.
+   */
   publishableKey?: string
-  /** Secret key (`onelo_sk_*`) — server credential, required for auth verification. */
+  /**
+   * Secret key (`onelo_sk_*`) — server credential, required for auth
+   * verification and for per-user Features calls (`features.forUser()`,
+   * `identify(userId)`).
+   */
   secretKey?: string
   /**
    * Base URL of the Onelo backend, e.g. `https://st.backend.onelo.tools`.
@@ -205,7 +217,7 @@ export class Onelo implements AuthClient {
       ready: (timeoutMs) => this.readyImpl(timeoutMs),
       ensureStarted: () => this.ensureStarted(),
       apiUrl: this.apiUrl,
-      publishableKey: this.key,
+      key: this.key,
       requestTimeout: this.requestTimeout,
       fetchImpl: this.fetchImpl,
       featureEnvironment: this.featureEnvironment,
@@ -226,8 +238,13 @@ export class Onelo implements AuthClient {
    * the stream so the next `feature()` reflects this user. Meant for
    * single-identity processes (CLI, worker, single-tenant). For a multi-user
    * backend use `features.forUser(userId)` instead — see its docs.
+   *
+   * Throws for a non-null `userId` when the client holds a publishable key: a
+   * per-user call must be signed with the secret key (#520). `identify(null)`
+   * (back to anonymous) always works.
    */
   identify(userId: string | null): void {
+    if (userId !== null) assertSecretKeyForUser(this.key, 'onelo.identify(userId)')
     const previous = this.userId
     this.userId = userId
     if (userId !== previous) this.trackIdentifyChurn()

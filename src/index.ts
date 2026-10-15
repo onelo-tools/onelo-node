@@ -26,6 +26,10 @@ export {
 } from './auth/verify'
 export type { FetchLike, VerifyRetryOptions } from './auth/verify'
 
+export { assertIdentity } from './auth/assert'
+export type { AssertIdentityOptions, AssertedIdentity } from './auth/assert'
+export type { IssuedSession } from './auth/exchange'
+
 export { InProcessAuthCache } from './auth/cache'
 export type { AuthCache } from './auth/cache'
 

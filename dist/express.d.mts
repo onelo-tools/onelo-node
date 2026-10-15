@@ -1,4 +1,4 @@
-import { O as OneloUser, M as MonitorClient, A as AuthClient, R as ResolverOptions } from './resolve-djpcxzNJ.mjs';
+import { O as OneloUser, M as MonitorClient, A as AuthClient, R as ResolverOptions } from './resolve-MQ3XTnzg.mjs';
 
 /**
  * Express adapter for Onelo auth.

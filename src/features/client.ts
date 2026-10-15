@@ -11,6 +11,7 @@ import { VERSION } from '../version'
 import type { FeatureCache, FeatureState } from './cache'
 import { SDK_PLATFORM, USER_AGENT, resolveFetch } from './consumer'
 import { Feature, GATED_STATUSES, UserFeatures } from './feature'
+import { assertSecretKeyForUser } from './secret-key'
 import { UserSnapshotCache } from './user-snapshot-cache'
 
 // eslint-disable-next-line no-console
@@ -25,8 +26,11 @@ export interface FeaturesClientOptions {
   /** Lazily start the background consumer on first feature use. Idempotent. */
   ensureStarted: () => void
   apiUrl: string
-  /** The primary key (used for the stateless /resolve call). */
-  publishableKey: string
+  /**
+   * The client's key, sent as the `publishableKey` wire field. Per-user calls
+   * (`forUser`) require it to be a secret key (#520).
+   */
+  key: string
   requestTimeout: number
   fetchImpl?: FetchLike
   featureEnvironment: string | null
@@ -97,10 +101,13 @@ export class FeaturesClient {
    * Resolve features for a SPECIFIC user — the multi-user-safe path. Stateless
    * POST /resolve for THIS user; never touches global identity. Cached per-user
    * for `ttl` seconds. Fail-closed: any network/HTTP error → every feature
-   * hidden (empty snapshot). Throws only for an empty user_id (programmer error).
+   * hidden (empty snapshot). Throws only for programmer/config errors: an empty
+   * userId, or a client configured with a publishable key — a per-user call must
+   * be signed with the secret key (#520).
    */
   async forUser(userId: string, options: ForUserOptions = {}): Promise<UserFeatures> {
     if (!userId) throw new Error('forUser requires a non-empty userId')
+    assertSecretKeyForUser(this.opts.key, 'onelo.features.forUser()')
     let snapshot = this.userCache.get(userId)
     if (snapshot === null) {
       snapshot = await this.resolveUser(userId)
@@ -110,7 +117,7 @@ export class FeaturesClient {
   }
 
   private async resolveUser(userId: string): Promise<Record<string, FeatureState>> {
-    if (!this.opts.apiUrl || !this.opts.publishableKey) {
+    if (!this.opts.apiUrl || !this.opts.key) {
       warn('forUser: SDK missing apiUrl/key — resolving empty')
       return {}
     }
@@ -120,7 +127,7 @@ export class FeaturesClient {
       return {}
     }
     const body: Record<string, unknown> = {
-      publishableKey: this.opts.publishableKey,
+      publishableKey: this.opts.key,
       userId,
       sdk_platform: SDK_PLATFORM,
       sdk_version: VERSION,

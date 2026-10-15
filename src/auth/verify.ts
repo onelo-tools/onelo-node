@@ -4,6 +4,15 @@
  * function (Node has no sync/async split).
  */
 import type { AuthClient } from '../client'
+import {
+  APP_IS_ON_ONELO_AUTH,
+  type Exchanged,
+  isIssuerToken,
+  isKnownOneloAuth,
+  mapExchangeResponse,
+  refusalCode,
+  rememberOneloAuth,
+} from './exchange'
 import { OneloUser } from './user'
 import {
   OneloAuthError,
@@ -81,7 +90,9 @@ async function mapResponse(res: Response): Promise<OneloUser> {
     return user
   }
   if (status === 401) throw new OneloAuthInvalidToken('invalid or expired token')
-  if (status === 403) throw new OneloAuthForbidden('token valid but principal forbidden')
+  // A banned or deleted App User is `403 user_revoked` (#831); the code rides
+  // on the error, and the adapters answer it as `reason`.
+  if (status === 403) throw new OneloAuthForbidden('token valid but principal forbidden', await refusalCode(res))
   if (status === 429) {
     // NOT a generic 5xx: retrying a rate-limit immediately makes it worse. The
     // retry loops skip it (see verifyWithRetry).
@@ -96,22 +107,36 @@ async function mapResponse(res: Response): Promise<OneloUser> {
 }
 
 /**
- * Verify a user-supplied access token against the Onelo backend.
+ * Verify a user-supplied token against the Onelo backend.
  *
  * Low-level helper for any Node stack (websockets, queue workers, custom
  * middleware). The framework adapters layer caching, retries, and gates on top.
  *
+ * The token is either an Onelo session token or, for an App that brings its
+ * own sign-in, the token of its issuer (Supabase, Clerk, Firebase, any OpenID
+ * Connect issuer). An issuer token is exchanged at Onelo, which verifies it
+ * and answers with the App User; nothing about it is trusted here.
+ *
  * @param client An {@link AuthClient} constructed with a **secret** key —
  *   verifying a user token requires server-side credentials.
- * @param token  The user's access token (NOT your secret key).
+ * @param token  The user's token (NOT your secret key).
  * @throws {OneloAuthMissingToken} token is empty / whitespace.
  * @throws {OneloAuthError}        client was built with a publishable key.
  * @throws {OneloAuthInvalidToken} backend returned 401.
- * @throws {OneloAuthForbidden}    backend returned 403.
+ * @throws {OneloAuthForbidden}    backend returned 403, or 409 for an issuer token.
  * @throws {OneloAuthRateLimited}  backend returned 429.
  * @throws {OneloAuthUnavailable}  backend 5xx, network failure, unexpected status.
  */
 export async function verifyToken(client: AuthClient, token: string): Promise<OneloUser> {
+  return (await verifyTokenWithSession(client, token)).user
+}
+
+/**
+ * {@link verifyToken}, also answering the Onelo session the exchange minted
+ * for an issuer token (`null` for an Onelo session token). The resolver keeps
+ * that session, so a cache expiry is a `/user` call and not another sign-in.
+ */
+export async function verifyTokenWithSession(client: AuthClient, token: string): Promise<Exchanged> {
   if (!token || !token.trim()) throw new OneloAuthMissingToken('token is empty')
 
   if (!client.isSecretKey) {
@@ -122,6 +147,23 @@ export async function verifyToken(client: AuthClient, token: string): Promise<On
     )
   }
 
+  const doFetch: FetchLike | undefined =
+    client.fetchImpl ?? (typeof fetch === 'function' ? (fetch as FetchLike) : undefined)
+  if (!doFetch) {
+    throw new OneloAuthUnavailable(
+      'global fetch is unavailable — Node 18+ is required, or pass fetchImpl in the Onelo config.',
+    )
+  }
+
+  if (isIssuerToken(token) && !isKnownOneloAuth(client)) {
+    const exchanged = await exchangeIssuerToken(client, token, doFetch)
+    if (exchanged !== APP_IS_ON_ONELO_AUTH) return exchanged
+    // The App is on Onelo Auth (or the backend has no exchange), so this is
+    // not an issuer's token. `/user` still knows the older Onelo tokens that
+    // carry no `type`.
+    rememberOneloAuth(client)
+  }
+
   const url = `${client.apiUrl}/api/sdk/auth/user`
   const headers: Record<string, string> = {
     Authorization: `Bearer ${token}`,
@@ -129,14 +171,6 @@ export async function verifyToken(client: AuthClient, token: string): Promise<On
     // X-Publishable-Key path still works on older deployments.
     'X-Onelo-Secret-Key': client.key,
     'X-Publishable-Key': client.key,
-  }
-
-  const doFetch: FetchLike | undefined =
-    client.fetchImpl ?? (typeof fetch === 'function' ? (fetch as FetchLike) : undefined)
-  if (!doFetch) {
-    throw new OneloAuthUnavailable(
-      'global fetch is unavailable — Node 18+ is required, or pass fetchImpl in the Onelo config.',
-    )
   }
 
   let res: Response
@@ -150,7 +184,27 @@ export async function verifyToken(client: AuthClient, token: string): Promise<On
     throw new OneloAuthUnavailable(`network error: ${String(exc)}`)
   }
 
-  return mapResponse(res)
+  return { user: await mapResponse(res), session: null }
+}
+
+/** `POST /api/sdk/auth/exchange` — the Secret Key travels in the body's key field. */
+async function exchangeIssuerToken(
+  client: AuthClient,
+  token: string,
+  doFetch: FetchLike,
+): Promise<Exchanged | typeof APP_IS_ON_ONELO_AUTH> {
+  let res: Response
+  try {
+    res = await doFetch(`${client.apiUrl}/api/sdk/auth/exchange`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ publishableKey: client.key, token }),
+      signal: AbortSignal.timeout(client.requestTimeout),
+    })
+  } catch (exc) {
+    throw new OneloAuthUnavailable(`network error: ${String(exc)}`)
+  }
+  return mapExchangeResponse(res, parseRetryAfter(res.headers.get('retry-after')))
 }
 
 /** Options for {@link verifyWithRetry}. */
@@ -174,6 +228,15 @@ export async function verifyWithRetry(
   token: string,
   options: VerifyRetryOptions = {},
 ): Promise<OneloUser> {
+  return (await verifyWithRetryAndSession(client, token, options)).user
+}
+
+/** {@link verifyWithRetry} over {@link verifyTokenWithSession}. */
+export async function verifyWithRetryAndSession(
+  client: AuthClient,
+  token: string,
+  options: VerifyRetryOptions = {},
+): Promise<Exchanged> {
   const retryAttempts = options.retryAttempts ?? 3
   const retryTotalTimeout = options.retryTotalTimeout ?? 2000
   if (retryAttempts < 1) throw new Error('retryAttempts must be >= 1')
@@ -184,7 +247,7 @@ export async function verifyWithRetry(
 
   for (let attempt = 0; attempt < retryAttempts; attempt++) {
     try {
-      return await verifyToken(client, token)
+      return await verifyTokenWithSession(client, token)
     } catch (exc) {
       // Only 5xx/network (Unavailable) is retryable. 401/403/missing rethrow.
       if (!(exc instanceof OneloAuthUnavailable)) throw exc

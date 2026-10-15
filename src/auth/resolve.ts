@@ -19,7 +19,8 @@ import {
   OneloAuthUnavailable,
 } from './errors'
 import type { OneloUser } from './user'
-import { extractBearerToken, verifyWithRetry } from './verify'
+import { sessionLifetime } from './exchange'
+import { extractBearerToken, verifyWithRetry, verifyWithRetryAndSession } from './verify'
 
 /** `(userIdOrNull, eventName)` — fired on every verification result. */
 export type OnAuthEvent = (userId: string | null, event: string) => void
@@ -101,6 +102,47 @@ function safeEmit(cb: OnAuthEvent | undefined, userId: string | null, event: str
   }
 }
 
+/**
+ * Onelo sessions kept for issuer tokens: bounded, each with its own expiry on
+ * the monotonic clock. The oldest entry goes when full; losing one only costs
+ * another exchange.
+ */
+class InProcessSessions {
+  private readonly store = new Map<string, { accessToken: string; expiry: number }>()
+
+  constructor(private readonly maxSize = 10_000) {}
+
+  get(tokenHash: string): string | null {
+    const entry = this.store.get(tokenHash)
+    if (entry === undefined) return null
+    if (performance.now() >= entry.expiry) {
+      this.store.delete(tokenHash)
+      return null
+    }
+    return entry.accessToken
+  }
+
+  set(tokenHash: string, accessToken: string, lifetime: number): void {
+    if (!(lifetime > 0)) return
+    this.store.delete(tokenHash)
+    this.store.set(tokenHash, { accessToken, expiry: performance.now() + lifetime * 1000 })
+    while (this.store.size > this.maxSize) {
+      const oldest = this.store.keys().next().value as string | undefined
+      if (oldest === undefined) break
+      this.store.delete(oldest)
+    }
+  }
+
+  delete(tokenHash: string): void {
+    this.store.delete(tokenHash)
+  }
+}
+
+/** The 401/403 body, with Onelo's refusal code as `reason` when it sent one. */
+function withReason(body: Record<string, unknown>, exc: OneloAuthError): Record<string, unknown> {
+  return exc.code ? { ...body, reason: exc.code } : body
+}
+
 /** Minimal Monitor surface the auth→monitor bridge needs. */
 interface MonitorLike {
   setUser(user: Record<string, unknown> | null): void
@@ -155,6 +197,43 @@ export function createResolver(client: AuthClient, options: ResolverOptions = {}
   const onAuthEvent = options.onAuthEvent
   const identifyMonitor = options.identifyMonitor ?? true
   const monitor = getMonitor(client)
+  /** Verifications under way, by token hash — see `resolve`. */
+  const inFlight = new Map<string, Promise<OneloUser>>()
+  /**
+   * The Onelo session the exchange minted for each issuer token (own sign-in),
+   * by token hash. In this process only, never in the pluggable cache: it holds
+   * a live credential.
+   */
+  const sessions = new InProcessSessions()
+
+  /**
+   * Verify a token the user cache does not hold.
+   *
+   * An issuer token is exchanged ONCE; the exchange is a sign-in (it notifies
+   * the developer's `user.signed_in` webhook and writes a security event), so
+   * it must not repeat on every cache expiry. Afterwards the session it minted
+   * is re-verified through `/user`, exactly like an Onelo session token, until
+   * that session or the issuer token lapses, or `/user` refuses it.
+   */
+  async function verifyFresh(token: string, tokenHash: string): Promise<OneloUser> {
+    const retry = { retryAttempts, retryTotalTimeout }
+    const kept = sessions.get(tokenHash)
+    if (kept !== null) {
+      try {
+        return await verifyWithRetry(client, kept, retry)
+      } catch (exc) {
+        // 401: the session lapsed early or was refused. Ask the door again;
+        // it decides about the issuer token. Anything else is the answer.
+        if (!(exc instanceof OneloAuthInvalidToken)) throw exc
+        sessions.delete(tokenHash)
+      }
+    }
+    const { user, session } = await verifyWithRetryAndSession(client, token, retry)
+    if (session !== null) {
+      sessions.set(tokenHash, session.accessToken, sessionLifetime(token, session))
+    }
+    return user
+  }
 
   function bridgeMonitor(user: OneloUser): void {
     // Only attach when a per-request monitor scope is active (a monitor request
@@ -213,10 +292,25 @@ export function createResolver(client: AuthClient, options: ResolverOptions = {}
       return cached
     }
 
-    // Miss — verify, with retries on 5xx.
+    // Miss — verify, with retries on 5xx. Concurrent requests carrying the
+    // same token share one verification: a page that fires ten calls on a cold
+    // cache costs one round trip, not ten (the exchange of an issuer token is
+    // rate-limited per identity). The raw result is cached; gates are per-request.
+    let pending = inFlight.get(tokenHash)
+    if (pending === undefined) {
+      pending = (async () => {
+        const verified = await verifyFresh(token, tokenHash)
+        await cache.set(tokenHash, verified, cacheTtl)
+        return verified
+      })().finally(() => {
+        inFlight.delete(tokenHash)
+      })
+      inFlight.set(tokenHash, pending)
+    }
+
     let user: OneloUser
     try {
-      user = await verifyWithRetry(client, token, { retryAttempts, retryTotalTimeout })
+      user = await pending
     } catch (exc) {
       if (exc instanceof OneloAuthMissingToken) {
         safeEmit(onAuthEvent, null, 'auth.fail.missing_token')
@@ -224,11 +318,11 @@ export function createResolver(client: AuthClient, options: ResolverOptions = {}
       }
       if (exc instanceof OneloAuthInvalidToken) {
         safeEmit(onAuthEvent, null, 'auth.fail.invalid_token')
-        throw new AuthHttpError(401, { error: 'invalid_token' })
+        throw new AuthHttpError(401, withReason({ error: 'invalid_token' }, exc))
       }
       if (exc instanceof OneloAuthForbidden) {
         safeEmit(onAuthEvent, null, 'auth.fail.forbidden')
-        throw new AuthHttpError(403, { error: 'forbidden' })
+        throw new AuthHttpError(403, withReason({ error: 'forbidden' }, exc))
       }
       // OneloAuthRateLimited is a subclass of Unavailable → also 503 here.
       if (exc instanceof OneloAuthUnavailable) {
@@ -242,9 +336,6 @@ export function createResolver(client: AuthClient, options: ResolverOptions = {}
       }
       throw exc
     }
-
-    // Cache the raw verification result; gates are per-request.
-    await cache.set(tokenHash, user, cacheTtl)
 
     try {
       checkGates(user)

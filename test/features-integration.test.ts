@@ -70,6 +70,33 @@ describe('features — SSE strategy', () => {
     expect(streamUrl).toContain('sdk_platform=node')
     await c.close()
   })
+
+  // ADR-0003: the Event Stream's credential is a request header for every SDK
+  // but browser JS. A key in the query string lands in the reverse proxy's
+  // access.log on every connect, so it must not appear in the URL at all.
+  it('sends the key as the X-Publishable-Key header, never in the stream URL', async () => {
+    let streamUrl = ''
+    let streamHeaders: Record<string, string> = {}
+    const stream = openSseStream([connectedFrame({}, 1)])
+    const fetchImpl: FetchLike = async (url, init) => {
+      if (url.includes('/features/stream')) {
+        streamUrl = url
+        streamHeaders = (init?.headers ?? {}) as Record<string, string>
+        return stream.response()
+      }
+      return new Response(null, { status: 204 })
+    }
+    const c = new Onelo({
+      secretKey: 'onelo_sk_test_feat',
+      apiUrl: 'https://api.test.onelo.tools',
+      fetchImpl,
+    })
+    await c.ready(1000)
+    expect(streamHeaders['X-Publishable-Key']).toBe('onelo_sk_test_feat')
+    expect(streamUrl).not.toContain('key=')
+    expect(streamUrl).not.toContain('onelo_sk_test_feat')
+    await c.close()
+  })
 })
 
 describe('features — polling strategy', () => {
@@ -84,6 +111,22 @@ describe('features — polling strategy', () => {
     expect(calls.poll).toBeGreaterThanOrEqual(1)
     expect(calls.stream).toBe(0)
     await c.close()
+  })
+
+  it('sends the key as X-Publishable-Key and NOT in the query string (ADR-0003, #105)', async () => {
+    const { fetchImpl, lastPoll } = featuresFetch({
+      poll: () => json({ config_version: 1, features: {}, discovery_requested: false }),
+    })
+    const c = client(fetchImpl, { strategy: 'polling' })
+    expect(await c.ready(1000)).toBe(true)
+    await c.close()
+    const poll = lastPoll()
+    expect(poll).toBeDefined()
+    expect(poll!.headers['X-Publishable-Key']).toBe('onelo_sk_test_feat')
+    // A Secret Key in the query string is written to the reverse proxy's
+    // access.log on every tick, and from 2027-03-31 the backend refuses it.
+    expect(new URL(poll!.url).searchParams.has('key')).toBe(false)
+    expect(poll!.url).not.toContain('onelo_sk_test_feat')
   })
 })
 

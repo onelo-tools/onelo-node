@@ -1,4 +1,5 @@
 import {
+  APP_IS_ON_ONELO_AUTH,
   AuthHttpError,
   InProcessAuthCache,
   OneloAuthError,
@@ -11,6 +12,7 @@ import {
   configureSensitiveKeys,
   createResolver,
   extractBearerToken,
+  mapExchangeResponse,
   parseRetryAfter,
   scrubMeta,
   scrubText,
@@ -18,7 +20,7 @@ import {
   setStrictEmailScrub,
   verifyToken,
   verifyWithRetry
-} from "./chunk-5SIT4NER.mjs";
+} from "./chunk-KZQMTYWC.mjs";
 
 // src/features/cache.ts
 var FeatureCache = class {
@@ -68,7 +70,7 @@ var FeatureCache = class {
 };
 
 // src/version.ts
-var VERSION = "0.5.0-staging";
+var VERSION = "0.10.1";
 
 // src/features/consumer.ts
 var SDK_PLATFORM = "node";
@@ -182,6 +184,17 @@ var UserFeatures = class {
   }
 };
 
+// src/features/secret-key.ts
+function isSecretKeyString(key) {
+  return key.startsWith("onelo_sk_");
+}
+function assertSecretKeyForUser(key, call) {
+  if (isSecretKeyString(key)) return;
+  throw new Error(
+    `${call} needs the secret key: per-user Features calls from a server are trusted only when signed with a secret key, and this client was configured with a publishable key (onelo_pk_\u2026) \u2014 use your secret key (onelo_sk_\u2026) on the server: new Onelo({ secretKey: process.env.ONELO_SECRET_KEY, apiUrl }). Anonymous calls (feature(), isEnabled(), declare()) keep working with a publishable key.`
+  );
+}
+
 // src/features/user-snapshot-cache.ts
 var USER_SNAPSHOT_MAX_ENTRIES = 1e4;
 var UserSnapshotCache = class {
@@ -278,10 +291,13 @@ var FeaturesClient = class {
    * Resolve features for a SPECIFIC user — the multi-user-safe path. Stateless
    * POST /resolve for THIS user; never touches global identity. Cached per-user
    * for `ttl` seconds. Fail-closed: any network/HTTP error → every feature
-   * hidden (empty snapshot). Throws only for an empty user_id (programmer error).
+   * hidden (empty snapshot). Throws only for programmer/config errors: an empty
+   * userId, or a client configured with a publishable key — a per-user call must
+   * be signed with the secret key (#520).
    */
   async forUser(userId, options = {}) {
     if (!userId) throw new Error("forUser requires a non-empty userId");
+    assertSecretKeyForUser(this.opts.key, "onelo.features.forUser()");
     let snapshot = this.userCache.get(userId);
     if (snapshot === null) {
       snapshot = await this.resolveUser(userId);
@@ -290,7 +306,7 @@ var FeaturesClient = class {
     return new UserFeatures(userId, snapshot);
   }
   async resolveUser(userId) {
-    if (!this.opts.apiUrl || !this.opts.publishableKey) {
+    if (!this.opts.apiUrl || !this.opts.key) {
       warn("forUser: SDK missing apiUrl/key \u2014 resolving empty");
       return {};
     }
@@ -300,7 +316,7 @@ var FeaturesClient = class {
       return {};
     }
     const body = {
-      publishableKey: this.opts.publishableKey,
+      publishableKey: this.opts.key,
       userId,
       sdk_platform: SDK_PLATFORM,
       sdk_version: VERSION
@@ -448,7 +464,6 @@ var PollingConsumer = class {
   }
   buildUrl() {
     const params = new URLSearchParams({
-      key: this.opts.key,
       since_version: String(this.opts.cache.configVersion)
     });
     if (this.opts.featureEnvironment !== null) {
@@ -472,7 +487,7 @@ var PollingConsumer = class {
     try {
       res = await doFetch(this.buildUrl(), {
         method: "GET",
-        headers: { "User-Agent": USER_AGENT },
+        headers: { "User-Agent": USER_AGENT, "X-Publishable-Key": this.opts.key },
         signal: controller.signal
       });
     } catch {
@@ -663,7 +678,6 @@ var SseConsumer = class {
   }
   buildUrl() {
     const params = new URLSearchParams({
-      key: this.opts.key,
       since_version: String(this.opts.cache.configVersion),
       instance_id: getInstanceId(),
       sdk_platform: SDK_PLATFORM,
@@ -687,7 +701,14 @@ var SseConsumer = class {
       headers: {
         "User-Agent": USER_AGENT,
         Accept: "text/event-stream",
-        "X-Onelo-Instance-Id": getInstanceId()
+        "X-Onelo-Instance-Id": getInstanceId(),
+        // ADR-0003: the Event Stream's credential. A header-authenticated
+        // connection carries no `Deprecation`/`Sunset` — unlike `?key=`.
+        // The name is the transport slot, not a claim about the key's class:
+        // this is a backend SDK, so the value is usually a SECRET key, exactly
+        // as it was when it rode `?key=`. The backend resolves either through
+        // the same `_lookup_key`.
+        "X-Publishable-Key": this.opts.key
       },
       signal: this.controller.signal
     });
@@ -2009,7 +2030,7 @@ var Onelo = class {
       ready: (timeoutMs) => this.readyImpl(timeoutMs),
       ensureStarted: () => this.ensureStarted(),
       apiUrl: this.apiUrl,
-      publishableKey: this.key,
+      key: this.key,
       requestTimeout: this.requestTimeout,
       fetchImpl: this.fetchImpl,
       featureEnvironment: this.featureEnvironment
@@ -2029,8 +2050,13 @@ var Onelo = class {
    * the stream so the next `feature()` reflects this user. Meant for
    * single-identity processes (CLI, worker, single-tenant). For a multi-user
    * backend use `features.forUser(userId)` instead — see its docs.
+   *
+   * Throws for a non-null `userId` when the client holds a publishable key: a
+   * per-user call must be signed with the secret key (#520). `identify(null)`
+   * (back to anonymous) always works.
    */
   identify(userId) {
+    if (userId !== null) assertSecretKeyForUser(this.key, "onelo.identify(userId)");
     const previous = this.userId;
     this.userId = userId;
     if (userId !== previous) this.trackIdentifyChurn();
@@ -2192,6 +2218,85 @@ var Onelo = class {
     }
   }
 };
+
+// src/auth/assert.ts
+var IDENTITY_KEY_PREFIX = "onelo_ik_";
+var DEFAULT_TIMEOUT_MS = 1e4;
+function inBrowser() {
+  const g = globalThis;
+  return typeof g.window !== "undefined" && typeof g.document !== "undefined";
+}
+function apiBase(apiUrl) {
+  let parsed = null;
+  try {
+    parsed = apiUrl ? new URL(apiUrl) : null;
+  } catch {
+    parsed = null;
+  }
+  if (!parsed || parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error(`assertIdentity requires apiUrl as an http(s) URL, got ${JSON.stringify(apiUrl)}.`);
+  }
+  return apiUrl.replace(/\/+$/, "");
+}
+async function assertIdentity(options) {
+  if (inBrowser()) {
+    throw new OneloAuthError(
+      "assertIdentity runs only on your server: the identity key must never reach a browser.",
+      "browser_not_allowed"
+    );
+  }
+  const base = apiBase(options.apiUrl);
+  const key = options.identityKey;
+  if (!key) throw new Error("assertIdentity requires identityKey (onelo_ik_\u2026).");
+  if (!key.startsWith(IDENTITY_KEY_PREFIX)) {
+    throw new Error("assertIdentity takes an identity key (onelo_ik_\u2026), not a Secret or Publishable Key.");
+  }
+  if (!options.externalId || !options.externalId.trim()) {
+    throw new Error("assertIdentity requires externalId.");
+  }
+  const body = {
+    identityKey: key,
+    externalId: options.externalId,
+    emailVerified: options.emailVerified === true
+  };
+  if (options.email !== void 0) body.email = options.email;
+  const doFetch = options.fetchImpl ?? globalThis.fetch;
+  let res;
+  try {
+    res = await doFetch(`${base}/api/sdk/auth/assert`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(options.timeoutMs ?? DEFAULT_TIMEOUT_MS)
+    });
+  } catch (exc) {
+    throw new OneloAuthUnavailable(`network error: ${String(exc).split(key).join("[identity key]")}`);
+  }
+  if (res.status === 404 || res.status === 405) {
+    throw new OneloAuthUnavailable(`backend has no assertion endpoint (status ${res.status})`);
+  }
+  if (res.status === 400) {
+    const code = await bodyCode(res);
+    throw new OneloAuthError(`assertion refused (${code ?? "status 400"})`, code);
+  }
+  const answer = await mapExchangeResponse(res, parseRetryAfter(res.headers.get("retry-after")));
+  if (answer === APP_IS_ON_ONELO_AUTH) {
+    throw new OneloAuthForbidden(
+      "assertion refused (sign_in_mode_onelo): the App uses Onelo Auth",
+      "sign_in_mode_onelo"
+    );
+  }
+  if (!answer.session) throw new OneloAuthUnavailable("backend returned 200 without a session");
+  return { user: answer.user, session: answer.session };
+}
+async function bodyCode(res) {
+  try {
+    const detail = (await res.json()).detail;
+    return typeof detail?.error === "string" && detail.error ? detail.error : null;
+  } catch {
+    return null;
+  }
+}
 export {
   AuthHttpError,
   Breadcrumbs,
@@ -2207,6 +2312,7 @@ export {
   OneloUser,
   UserFeatures,
   VERSION,
+  assertIdentity,
   createResolver,
   extractBearerToken,
   getInstanceId,

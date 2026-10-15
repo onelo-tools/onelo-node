@@ -39,9 +39,11 @@ export function featuresFetch(routes: FeatureRoutes): {
   fetchImpl: FetchLike
   calls: { stream: number; poll: number; resolve: number; batchPing: number }
   lastResolveBody: () => unknown
+  lastPoll: () => { url: string; headers: Record<string, string> } | undefined
 } {
   const calls = { stream: 0, poll: 0, resolve: 0, batchPing: 0 }
   let lastResolveBody: unknown
+  let lastPoll: { url: string; headers: Record<string, string> } | undefined
   const fetchImpl: FetchLike = async (url, init) => {
     if (url.includes('/features/stream')) {
       calls.stream++
@@ -49,6 +51,7 @@ export function featuresFetch(routes: FeatureRoutes): {
     }
     if (url.includes('/features/poll')) {
       calls.poll++
+      lastPoll = { url, headers: (init?.headers ?? {}) as Record<string, string> }
       return routes.poll ? routes.poll() : new Response('{}', { status: 200 })
     }
     if (url.includes('/features/resolve')) {
@@ -62,7 +65,7 @@ export function featuresFetch(routes: FeatureRoutes): {
     }
     return new Response(null, { status: 404 })
   }
-  return { fetchImpl, calls, lastResolveBody: () => lastResolveBody }
+  return { fetchImpl, calls, lastResolveBody: () => lastResolveBody, lastPoll: () => lastPoll }
 }
 
 export function json(body: unknown, status = 200): Response {

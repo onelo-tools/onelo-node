@@ -1,7 +1,7 @@
 import {
   scrubHeaders,
   scrubUrl
-} from "./chunk-5SIT4NER.mjs";
+} from "./chunk-KZQMTYWC.mjs";
 
 // src/monitor/request-context.ts
 var DROP_HEADERS = /* @__PURE__ */ new Set(["cookie", "set-cookie", "authorization"]);

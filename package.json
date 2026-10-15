@@ -1,6 +1,6 @@
 {
   "name": "@onelo/node",
-  "version": "0.6.1",
+  "version": "0.10.1",
   "license": "MIT",
   "description": "Onelo backend SDK for Node.js — verify user tokens, gate features, capture monitor events. Framework adapters for Express, Next.js, Fastify, and Hono.",
   "main": "./dist/index.js",

@@ -97,6 +97,19 @@ describe('createResolver', () => {
     expect(err.body.reason).toBe('email_unverified')
   })
 
+  it('requireEmailVerified passes a verified user, in the shape /user sends since #819', async () => {
+    // Before Email Verification existed the backend never sent the field, so
+    // this option refused everyone. `/api/sdk/auth/user` now reports it at the
+    // top level, beside the access answer.
+    const { fetchImpl } = jsonFetch(200, {
+      id: 'u', email: 'e@x.co', created_at: null, metadata: {},
+      entitlement: 'none', allowed_in: true, email_verified: true,
+    })
+    const { resolve } = createResolver(secretClient(fetchImpl), { requireEmailVerified: true })
+    const user = await resolve('Bearer tok', null)
+    expect(user.emailVerified).toBe(true)
+  })
+
   it('requirePlan gate → 403 when plan not allowed', async () => {
     const { fetchImpl } = jsonFetch(200, { id: 'u', email: 'e@x.co', plan: 'free' })
     const { resolve } = createResolver(secretClient(fetchImpl), { requirePlan: ['pro'] })

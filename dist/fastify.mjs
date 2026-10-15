@@ -1,10 +1,10 @@
 import {
   attachRequestToScope
-} from "./chunk-6VK4B7OZ.mjs";
+} from "./chunk-NDCIQ6ZJ.mjs";
 import {
   AuthHttpError,
   createResolver
-} from "./chunk-5SIT4NER.mjs";
+} from "./chunk-KZQMTYWC.mjs";
 
 // src/fastify.ts
 function getAuthHeader(req) {

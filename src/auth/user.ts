@@ -1,5 +1,6 @@
 /**
- * The authenticated Onelo user returned by `GET /api/sdk/auth/user`.
+ * The authenticated Onelo user returned by `GET /api/sdk/auth/user`, or by
+ * `POST /api/sdk/auth/exchange` (its `user`) for an App with its own sign-in.
  *
  * Mirrors Python's `onelo.auth.OneloUser`. The backend response schema today is
  * `{ id, email, created_at, metadata }`; `email_verified` and `plan` are not

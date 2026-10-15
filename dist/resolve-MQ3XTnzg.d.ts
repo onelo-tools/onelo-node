@@ -1,5 +1,6 @@
 /**
- * The authenticated Onelo user returned by `GET /api/sdk/auth/user`.
+ * The authenticated Onelo user returned by `GET /api/sdk/auth/user`, or by
+ * `POST /api/sdk/auth/exchange` (its `user`) for an App with its own sign-in.
  *
  * Mirrors Python's `onelo.auth.OneloUser`. The backend response schema today is
  * `{ id, email, created_at, metadata }`; `email_verified` and `plan` are not
@@ -59,18 +60,23 @@ declare function parseRetryAfter(value: string | null | undefined): number | nul
  */
 declare function extractBearerToken(authorization: string | null | undefined): string | null;
 /**
- * Verify a user-supplied access token against the Onelo backend.
+ * Verify a user-supplied token against the Onelo backend.
  *
  * Low-level helper for any Node stack (websockets, queue workers, custom
  * middleware). The framework adapters layer caching, retries, and gates on top.
  *
+ * The token is either an Onelo session token or, for an App that brings its
+ * own sign-in, the token of its issuer (Supabase, Clerk, Firebase, any OpenID
+ * Connect issuer). An issuer token is exchanged at Onelo, which verifies it
+ * and answers with the App User; nothing about it is trusted here.
+ *
  * @param client An {@link AuthClient} constructed with a **secret** key —
  *   verifying a user token requires server-side credentials.
- * @param token  The user's access token (NOT your secret key).
+ * @param token  The user's token (NOT your secret key).
  * @throws {OneloAuthMissingToken} token is empty / whitespace.
  * @throws {OneloAuthError}        client was built with a publishable key.
  * @throws {OneloAuthInvalidToken} backend returned 401.
- * @throws {OneloAuthForbidden}    backend returned 403.
+ * @throws {OneloAuthForbidden}    backend returned 403, or 409 for an issuer token.
  * @throws {OneloAuthRateLimited}  backend returned 429.
  * @throws {OneloAuthUnavailable}  backend 5xx, network failure, unexpected status.
  */
@@ -207,8 +213,11 @@ interface FeaturesClientOptions {
     /** Lazily start the background consumer on first feature use. Idempotent. */
     ensureStarted: () => void;
     apiUrl: string;
-    /** The primary key (used for the stateless /resolve call). */
-    publishableKey: string;
+    /**
+     * The client's key, sent as the `publishableKey` wire field. Per-user calls
+     * (`forUser`) require it to be a secret key (#520).
+     */
+    key: string;
     requestTimeout: number;
     fetchImpl?: FetchLike;
     featureEnvironment: string | null;
@@ -244,7 +253,9 @@ declare class FeaturesClient {
      * Resolve features for a SPECIFIC user — the multi-user-safe path. Stateless
      * POST /resolve for THIS user; never touches global identity. Cached per-user
      * for `ttl` seconds. Fail-closed: any network/HTTP error → every feature
-     * hidden (empty snapshot). Throws only for an empty user_id (programmer error).
+     * hidden (empty snapshot). Throws only for programmer/config errors: an empty
+     * userId, or a client configured with a publishable key — a per-user call must
+     * be signed with the secret key (#520).
      */
     forUser(userId: string, options?: ForUserOptions): Promise<UserFeatures>;
     private resolveUser;
@@ -537,9 +548,20 @@ interface AuthClient {
 interface OneloConfig {
     /** Generic key — classified as secret/publishable by its `_sk_`/`_pk_` prefix. */
     key?: string;
-    /** Publishable key (`onelo_pk_*`) — public client identifier. */
+    /**
+     * Publishable key (`onelo_pk_*`) — public client identifier.
+     *
+     * @deprecated A server SDK should hold the secret key: pass `secretKey`
+     * (or `key`). With a publishable key, auth verification refuses to run and
+     * per-user Features calls (`features.forUser()`, `identify(userId)`) throw.
+     * Still accepted so existing code keeps compiling.
+     */
     publishableKey?: string;
-    /** Secret key (`onelo_sk_*`) — server credential, required for auth verification. */
+    /**
+     * Secret key (`onelo_sk_*`) — server credential, required for auth
+     * verification and for per-user Features calls (`features.forUser()`,
+     * `identify(userId)`).
+     */
     secretKey?: string;
     /**
      * Base URL of the Onelo backend, e.g. `https://st.backend.onelo.tools`.
@@ -596,6 +618,10 @@ declare class Onelo implements AuthClient {
      * the stream so the next `feature()` reflects this user. Meant for
      * single-identity processes (CLI, worker, single-tenant). For a multi-user
      * backend use `features.forUser(userId)` instead — see its docs.
+     *
+     * Throws for a non-null `userId` when the client holds a publishable key: a
+     * per-user call must be signed with the secret key (#520). `identify(null)`
+     * (back to anonymous) always works.
      */
     identify(userId: string | null): void;
     /**
@@ -728,4 +754,4 @@ interface Resolver {
  */
 declare function createResolver(client: AuthClient, options?: ResolverOptions): Resolver;
 
-export { type AuthClient as A, type Breadcrumb as B, type CaptureExceptionOptions as C, verifyWithRetry as D, type EventLevel as E, Feature as F, InProcessAuthCache as I, MonitorClient as M, OneloUser as O, type ResolverOptions as R, type StackFrame as S, type TrackOptions as T, UserFeatures as U, type VerifyRetryOptions as V, type AddBreadcrumbOptions as a, type AuthCache as b, AuthHttpError as c, type BreadcrumbCategory as d, Breadcrumbs as e, type CaptureMessageOptions as f, type CaptureMonitor as g, type CapturedException as h, type CarrierOptions as i, type ConsoleCaptureOptions as j, FeaturesClient as k, type FetchBreadcrumbOptions as l, type FetchLike as m, type ForUserOptions as n, type MonitorEvent as o, type MonitorInitOptions as p, type OnAuthEvent as q, Onelo as r, type OneloConfig as s, type Resolver as t, createResolver as u, extractBearerToken as v, installConsoleCapture as w, installFetchBreadcrumbs as x, parseRetryAfter as y, verifyToken as z };
+export { type AuthClient as A, type Breadcrumb as B, type CaptureExceptionOptions as C, verifyWithRetry as D, type EventLevel as E, type FetchLike as F, InProcessAuthCache as I, MonitorClient as M, OneloUser as O, type ResolverOptions as R, type StackFrame as S, type TrackOptions as T, UserFeatures as U, type VerifyRetryOptions as V, type AddBreadcrumbOptions as a, type AuthCache as b, AuthHttpError as c, type BreadcrumbCategory as d, Breadcrumbs as e, type CaptureMessageOptions as f, type CaptureMonitor as g, type CapturedException as h, type CarrierOptions as i, type ConsoleCaptureOptions as j, Feature as k, FeaturesClient as l, type FetchBreadcrumbOptions as m, type ForUserOptions as n, type MonitorEvent as o, type MonitorInitOptions as p, type OnAuthEvent as q, Onelo as r, type OneloConfig as s, type Resolver as t, createResolver as u, extractBearerToken as v, installConsoleCapture as w, installFetchBreadcrumbs as x, parseRetryAfter as y, verifyToken as z };

@@ -136,8 +136,9 @@ export class SseConsumer implements FeatureConsumer {
   }
 
   private buildUrl(): string {
+    // The key is NOT here — it travels as the `X-Publishable-Key` request
+    // header (ADR-0003), so it never reaches the reverse proxy's access.log.
     const params = new URLSearchParams({
-      key: this.opts.key,
       since_version: String(this.opts.cache.configVersion),
       instance_id: getInstanceId(),
       sdk_platform: SDK_PLATFORM,
@@ -165,6 +166,13 @@ export class SseConsumer implements FeatureConsumer {
         'User-Agent': USER_AGENT,
         Accept: 'text/event-stream',
         'X-Onelo-Instance-Id': getInstanceId(),
+        // ADR-0003: the Event Stream's credential. A header-authenticated
+        // connection carries no `Deprecation`/`Sunset` — unlike `?key=`.
+        // The name is the transport slot, not a claim about the key's class:
+        // this is a backend SDK, so the value is usually a SECRET key, exactly
+        // as it was when it rode `?key=`. The backend resolves either through
+        // the same `_lookup_key`.
+        'X-Publishable-Key': this.opts.key,
       },
       signal: this.controller.signal,
     })

@@ -7,15 +7,26 @@
  *
  *   OneloAuthError
  *   ├── OneloAuthMissingToken   → 401 (no/blank/malformed bearer token)
- *   ├── OneloAuthInvalidToken   → 401 (backend 401: expired/revoked)
- *   ├── OneloAuthForbidden      → 403 (backend 403, or a failed gate)
+ *   ├── OneloAuthInvalidToken   → 401 (backend 401: expired/revoked/refused)
+ *   ├── OneloAuthForbidden      → 403 (backend 403, a failed gate, or 409 for
+ *   │                                  an issuer token: e-mail already in use)
  *   └── OneloAuthUnavailable    → 503 (backend 5xx after retries / network)
  *       └── OneloAuthRateLimited → still 503, but the retry loop skips it
+ *
+ * Every error carries `code`: the refusal code Onelo named, or `null`.
  */
 
 export class OneloAuthError extends Error {
-  constructor(message?: string) {
+  /**
+   * The refusal code Onelo sent, when it sent one — e.g. `token_expired`,
+   * `banned`, `email_in_use` for an issuer token (own sign-in). `null` when
+   * the backend named no code.
+   */
+  readonly code: string | null
+
+  constructor(message?: string, code: string | null = null) {
     super(message)
+    this.code = code
     // Restore the prototype chain so `instanceof` works even when this file is
     // transpiled to a target where `extends Error` breaks it. `new.target`
     // resolves to the actual subclass being constructed.
@@ -52,8 +63,8 @@ export class OneloAuthUnavailable extends OneloAuthError {}
 export class OneloAuthRateLimited extends OneloAuthUnavailable {
   readonly retryAfter: number | null
 
-  constructor(message?: string, retryAfter: number | null = null) {
-    super(message)
+  constructor(message?: string, retryAfter: number | null = null, code: string | null = null) {
+    super(message, code)
     this.retryAfter = retryAfter
   }
 }
