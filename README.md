@@ -1,5 +1,7 @@
 # @onelo/node
 
+![Tests](https://github.com/onelo-tools/onelo-node/actions/workflows/tests.yml/badge.svg)
+
 The Onelo SDK for Node.js backends — verify users, gate features by plan, and monitor errors. Ships adapters for Express, Next.js, Fastify and Hono.
 
 Part of [Onelo](https://onelo.tools): hosted sign-in, a paywall on **your own Stripe** account, plan-gated feature flags, uptime monitoring, in-app feedback, a public roadmap and a waitlist.
