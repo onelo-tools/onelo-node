@@ -1,7 +1,5 @@
 # @onelo/node
 
-![Tests](https://github.com/onelo-tools/onelo-node/actions/workflows/tests.yml/badge.svg)
-
 The Onelo SDK for Node.js backends — verify users, gate features by plan, and monitor errors. Ships adapters for Express, Next.js, Fastify and Hono.
 
 Part of [Onelo](https://onelo.tools): hosted sign-in, a paywall on **your own Stripe** account, plan-gated feature flags, uptime monitoring, in-app feedback, a public roadmap and a waitlist.
@@ -138,6 +136,7 @@ const { user, session } = await assertIdentity({
 | **auth** | Verify tokens issued to your users by Onelo or by your own sign-in | `verifyToken()`, `verifyWithRetry()`, `extractBearerToken()`, `createResolver()` |
 | `onelo.features` | Plan-gated feature flags, streamed live | `feature()`, `isEnabled()`, `declare()`, `forUser()`, `ready()` |
 | `onelo.monitor` | Error and event reporting, breadcrumbs | `init()`, `captureException()`, `track()`, `setUser()`, `flush()` |
+| `onelo.store` | Your app's plans with prices (secret key) | `listPlans()` |
 
 Feature checks are synchronous and **fail closed** — if the snapshot is unavailable, a flag reads as hidden rather than accidentally granting access:
 
@@ -162,6 +161,14 @@ process.on('SIGTERM', async () => {
   await onelo.close()
   process.exit(0)
 })
+```
+
+Plans with prices, so an admin panel never copies them from the dashboard. `plan` is the same key as `OneloUser.plan`; amounts are in minor units:
+
+```ts
+const plans = await onelo.store.listPlans()
+// [{ plan: 'pro', name: 'Pro', mode: 'subscription', currency: 'eur',
+//    priceAmount: 1900, annualPriceAmount: 19000, trialPeriodDays: 14, ... }]
 ```
 
 ## Requirements

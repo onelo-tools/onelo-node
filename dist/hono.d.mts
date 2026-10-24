@@ -1,4 +1,4 @@
-import { M as MonitorClient, A as AuthClient, R as ResolverOptions } from './resolve-MQ3XTnzg.mjs';
+import { M as MonitorClient, A as AuthClient, R as ResolverOptions } from './resolve-C99eM3-Q.mjs';
 
 /**
  * Hono adapter for Onelo auth (middleware).

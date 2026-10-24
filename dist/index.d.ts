@@ -1,5 +1,5 @@
-import { F as FetchLike, O as OneloUser } from './resolve-MQ3XTnzg.js';
-export { a as AddBreadcrumbOptions, b as AuthCache, A as AuthClient, c as AuthHttpError, B as Breadcrumb, d as BreadcrumbCategory, e as Breadcrumbs, C as CaptureExceptionOptions, f as CaptureMessageOptions, g as CaptureMonitor, h as CapturedException, i as CarrierOptions, j as ConsoleCaptureOptions, E as EventLevel, k as Feature, l as FeaturesClient, m as FetchBreadcrumbOptions, n as ForUserOptions, I as InProcessAuthCache, M as MonitorClient, o as MonitorEvent, p as MonitorInitOptions, q as OnAuthEvent, r as Onelo, s as OneloConfig, t as Resolver, R as ResolverOptions, S as StackFrame, T as TrackOptions, U as UserFeatures, V as VerifyRetryOptions, u as createResolver, v as extractBearerToken, w as installConsoleCapture, x as installFetchBreadcrumbs, y as parseRetryAfter, z as verifyToken, D as verifyWithRetry } from './resolve-MQ3XTnzg.js';
+import { F as FetchLike, O as OneloUser } from './resolve-C99eM3-Q.js';
+export { a as AddBreadcrumbOptions, b as AuthCache, A as AuthClient, c as AuthHttpError, B as Breadcrumb, d as BreadcrumbCategory, e as Breadcrumbs, C as CaptureExceptionOptions, f as CaptureMessageOptions, g as CaptureMonitor, h as CapturedException, i as CarrierOptions, j as ConsoleCaptureOptions, E as EventLevel, k as Feature, l as FeaturesClient, m as FetchBreadcrumbOptions, n as ForUserOptions, I as InProcessAuthCache, M as MonitorClient, o as MonitorEvent, p as MonitorInitOptions, q as OnAuthEvent, r as Onelo, s as OneloConfig, t as OneloPlan, u as OneloStoreError, v as Resolver, R as ResolverOptions, S as StackFrame, w as StoreClient, T as TrackOptions, U as UserFeatures, V as VerifyRetryOptions, x as createResolver, y as extractBearerToken, z as installConsoleCapture, D as installFetchBreadcrumbs, G as parseRetryAfter, H as verifyToken, J as verifyWithRetry } from './resolve-C99eM3-Q.js';
 
 /**
  * An App may bring its own sign-in (ADR-0032). Its frontend then sends the
@@ -127,6 +127,6 @@ type Strategy = 'sse' | 'polling';
 
 declare function getInstanceId(): string;
 
-declare const VERSION = "0.10.1";
+declare const VERSION = "0.11.0";
 
 export { type AssertIdentityOptions, type AssertedIdentity, FetchLike, type IssuedSession, OneloAuthError, OneloAuthForbidden, OneloAuthInvalidToken, OneloAuthMissingToken, OneloAuthRateLimited, OneloAuthUnavailable, OneloUser, type Strategy, VERSION, assertIdentity, getInstanceId };

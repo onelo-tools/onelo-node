@@ -31,6 +31,7 @@ __export(index_exports, {
   OneloAuthMissingToken: () => OneloAuthMissingToken,
   OneloAuthRateLimited: () => OneloAuthRateLimited,
   OneloAuthUnavailable: () => OneloAuthUnavailable,
+  OneloStoreError: () => OneloStoreError,
   OneloUser: () => OneloUser,
   UserFeatures: () => UserFeatures,
   VERSION: () => VERSION,
@@ -94,7 +95,7 @@ var FeatureCache = class {
 };
 
 // src/version.ts
-var VERSION = "0.10.1";
+var VERSION = "0.11.0";
 
 // src/features/consumer.ts
 var SDK_PLATFORM = "node";
@@ -2102,6 +2103,65 @@ var MonitorClient = class {
   }
 };
 
+// src/store/client.ts
+var OneloStoreError = class extends Error {
+  /** HTTP status, or `null` for a network error. */
+  status;
+  constructor(message, status) {
+    super(message);
+    this.name = "OneloStoreError";
+    this.status = status;
+  }
+};
+var StoreClient = class {
+  constructor(opts) {
+    this.opts = opts;
+  }
+  opts;
+  /** The App's active plans, ordered by sort order. Requires the Secret Key. */
+  async listPlans() {
+    if (!this.opts.isSecretKey) {
+      throw new Error("onelo.store.listPlans() requires the Secret Key \u2014 call it from your server.");
+    }
+    const doFetch = this.opts.fetchImpl ?? (typeof fetch === "function" ? fetch : void 0);
+    if (!doFetch) throw new OneloStoreError("global fetch is unavailable \u2014 Node 18+ is required.", null);
+    let res;
+    try {
+      res = await doFetch(`${this.opts.apiUrl}/api/sdk/store/plans`, {
+        method: "GET",
+        headers: { "X-Onelo-Secret-Key": this.opts.key, "User-Agent": USER_AGENT },
+        signal: AbortSignal.timeout(this.opts.requestTimeout)
+      });
+    } catch (exc) {
+      throw new OneloStoreError(`network error: ${String(exc)}`, null);
+    }
+    if (!res.ok) {
+      let detail = "";
+      try {
+        detail = String((await res.json()).detail ?? "");
+      } catch {
+      }
+      throw new OneloStoreError(`store/plans failed: HTTP ${res.status}${detail ? ` \u2014 ${detail}` : ""}`, res.status);
+    }
+    const body = await res.json();
+    return (body.plans ?? []).map(toPlan);
+  }
+};
+function toPlan(p) {
+  return {
+    plan: p.plan ?? null,
+    name: p.name,
+    shortLabel: p.short_label ?? null,
+    mode: p.mode,
+    currency: p.currency,
+    priceAmount: p.price_amount,
+    annualPriceAmount: p.annual_price_amount ?? null,
+    trialPeriodDays: p.trial_period_days ?? null,
+    isActive: Boolean(p.is_active),
+    sortOrder: p.sort_order
+  };
+}
+
 // src/client.ts
 var ANY_KEY_RE = /^onelo_(pk|sk)_[a-zA-Z0-9_]+$/;
 var BATCH_PING_DEBOUNCE_MS = 1e3;
@@ -2129,6 +2189,8 @@ var Onelo = class {
   features;
   /** The Monitor module — `onelo.monitor.init()`, `.captureException(err)`, etc. */
   monitor;
+  /** The Store module — `onelo.store.listPlans()` (Secret Key only). */
+  store;
   strategy;
   pollInterval;
   appVersion;
@@ -2217,6 +2279,13 @@ var Onelo = class {
       // Feature-flag correlation: every captured event ships the live flag
       // snapshot (empty until the features stream is used).
       flagProvider: () => this.cache.snapshot()
+    });
+    this.store = new StoreClient({
+      apiUrl: this.apiUrl,
+      key: this.key,
+      isSecretKey: this.isSecretKey,
+      requestTimeout: this.requestTimeout,
+      fetchImpl: this.fetchImpl
     });
   }
   /**
@@ -3000,6 +3069,7 @@ function createResolver(client, options = {}) {
   OneloAuthMissingToken,
   OneloAuthRateLimited,
   OneloAuthUnavailable,
+  OneloStoreError,
   OneloUser,
   UserFeatures,
   VERSION,

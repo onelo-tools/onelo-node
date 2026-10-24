@@ -24,6 +24,7 @@ import { assertSecretKeyForUser } from './features/secret-key'
 import { SseConsumer } from './features/sse-consumer'
 import { USER_AGENT, resolveFetch, type FeatureConsumer } from './features/consumer'
 import { MonitorClient } from './monitor/client'
+import { StoreClient } from './store/client'
 
 const ANY_KEY_RE = /^onelo_(pk|sk)_[a-zA-Z0-9_]+$/
 
@@ -118,6 +119,9 @@ export class Onelo implements AuthClient {
 
   /** The Monitor module — `onelo.monitor.init()`, `.captureException(err)`, etc. */
   readonly monitor: MonitorClient
+
+  /** The Store module — `onelo.store.listPlans()` (Secret Key only). */
+  readonly store: StoreClient
 
   private readonly strategy: Strategy
   private readonly pollInterval: number
@@ -230,6 +234,13 @@ export class Onelo implements AuthClient {
       // Feature-flag correlation: every captured event ships the live flag
       // snapshot (empty until the features stream is used).
       flagProvider: () => this.cache.snapshot(),
+    })
+    this.store = new StoreClient({
+      apiUrl: this.apiUrl,
+      key: this.key,
+      isSecretKey: this.isSecretKey,
+      requestTimeout: this.requestTimeout,
+      fetchImpl: this.fetchImpl,
     })
   }
 

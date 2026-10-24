@@ -10,4 +10,4 @@
 //
 // This is a JS/TS SDK, so it uses the `-staging` suffix convention (NOT PEP 440
 // like onelo-python). The Publish SDK workflow strips `-staging` before tagging.
-export const VERSION = '0.10.1'
+export const VERSION = '0.11.0'

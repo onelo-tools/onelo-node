@@ -51,6 +51,10 @@ export type { FeaturesClient, ForUserOptions } from './features/client'
 export type { Strategy } from './features/detection'
 export { getInstanceId } from './features/instance'
 
+// ── Store ───────────────────────────────────────────────────────────────
+export { OneloStoreError } from './store/client'
+export type { OneloPlan, StoreClient } from './store/client'
+
 // ── Monitor ─────────────────────────────────────────────────────────────
 export { Breadcrumbs } from './monitor/types'
 export type {

@@ -515,6 +515,48 @@ declare class MonitorClient {
 }
 
 /**
+ * The Store module — `onelo.store.listPlans()` (#909).
+ *
+ * Reads the App's plan catalog from `GET /api/sdk/store/plans` so a backend
+ * can show plan prices without copying them from the dashboard. Secret Key
+ * only: the endpoint refuses a publishable key.
+ */
+
+/** One active plan of the App, prices in minor units (e.g. 1900 = 19.00). */
+interface OneloPlan {
+    /** The plan key — the same key as `OneloUser.plan` and feature plan rules. */
+    plan: string | null;
+    name: string;
+    shortLabel: string | null;
+    mode: 'subscription' | 'one_time';
+    currency: string;
+    priceAmount: number;
+    annualPriceAmount: number | null;
+    trialPeriodDays: number | null;
+    isActive: boolean;
+    sortOrder: number;
+}
+/** A non-2xx answer or network failure from the Store endpoint. */
+declare class OneloStoreError extends Error {
+    /** HTTP status, or `null` for a network error. */
+    readonly status: number | null;
+    constructor(message: string, status: number | null);
+}
+interface StoreClientOptions {
+    apiUrl: string;
+    key: string;
+    isSecretKey: boolean;
+    requestTimeout: number;
+    fetchImpl?: FetchLike;
+}
+declare class StoreClient {
+    private readonly opts;
+    constructor(opts: StoreClientOptions);
+    /** The App's active plans, ordered by sort order. Requires the Secret Key. */
+    listPlans(): Promise<OneloPlan[]>;
+}
+
+/**
  * The Onelo client — the one class users construct. Holds credentials +
  * transport config (satisfies {@link AuthClient} for the auth path) AND owns the
  * Features module: a background SSE/polling consumer feeding an in-memory cache
@@ -596,6 +638,8 @@ declare class Onelo implements AuthClient {
     readonly features: FeaturesClient;
     /** The Monitor module — `onelo.monitor.init()`, `.captureException(err)`, etc. */
     readonly monitor: MonitorClient;
+    /** The Store module — `onelo.store.listPlans()` (Secret Key only). */
+    readonly store: StoreClient;
     private readonly strategy;
     private readonly pollInterval;
     private readonly appVersion;
@@ -754,4 +798,4 @@ interface Resolver {
  */
 declare function createResolver(client: AuthClient, options?: ResolverOptions): Resolver;
 
-export { type AuthClient as A, type Breadcrumb as B, type CaptureExceptionOptions as C, verifyWithRetry as D, type EventLevel as E, type FetchLike as F, InProcessAuthCache as I, MonitorClient as M, OneloUser as O, type ResolverOptions as R, type StackFrame as S, type TrackOptions as T, UserFeatures as U, type VerifyRetryOptions as V, type AddBreadcrumbOptions as a, type AuthCache as b, AuthHttpError as c, type BreadcrumbCategory as d, Breadcrumbs as e, type CaptureMessageOptions as f, type CaptureMonitor as g, type CapturedException as h, type CarrierOptions as i, type ConsoleCaptureOptions as j, Feature as k, FeaturesClient as l, type FetchBreadcrumbOptions as m, type ForUserOptions as n, type MonitorEvent as o, type MonitorInitOptions as p, type OnAuthEvent as q, Onelo as r, type OneloConfig as s, type Resolver as t, createResolver as u, extractBearerToken as v, installConsoleCapture as w, installFetchBreadcrumbs as x, parseRetryAfter as y, verifyToken as z };
+export { type AuthClient as A, type Breadcrumb as B, type CaptureExceptionOptions as C, installFetchBreadcrumbs as D, type EventLevel as E, type FetchLike as F, parseRetryAfter as G, verifyToken as H, InProcessAuthCache as I, verifyWithRetry as J, MonitorClient as M, OneloUser as O, type ResolverOptions as R, type StackFrame as S, type TrackOptions as T, UserFeatures as U, type VerifyRetryOptions as V, type AddBreadcrumbOptions as a, type AuthCache as b, AuthHttpError as c, type BreadcrumbCategory as d, Breadcrumbs as e, type CaptureMessageOptions as f, type CaptureMonitor as g, type CapturedException as h, type CarrierOptions as i, type ConsoleCaptureOptions as j, Feature as k, FeaturesClient as l, type FetchBreadcrumbOptions as m, type ForUserOptions as n, type MonitorEvent as o, type MonitorInitOptions as p, type OnAuthEvent as q, Onelo as r, type OneloConfig as s, type OneloPlan as t, OneloStoreError as u, type Resolver as v, StoreClient as w, createResolver as x, extractBearerToken as y, installConsoleCapture as z };
