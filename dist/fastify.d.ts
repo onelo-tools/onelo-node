@@ -1,4 +1,4 @@
-import { A as AuthClient, R as ResolverOptions, O as OneloUser, M as MonitorClient } from './resolve-C99eM3-Q.js';
+import { A as AuthClient, R as ResolverOptions, O as OneloUser, M as MonitorClient } from './resolve-BDx_p0zc.js';
 
 /**
  * Fastify adapter for Onelo auth (preHandler hook).

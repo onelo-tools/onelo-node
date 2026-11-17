@@ -535,6 +535,20 @@ interface OneloPlan {
     trialPeriodDays: number | null;
     isActive: boolean;
     sortOrder: number;
+    /** `'exclusive'`: `priceAmount` is a net price and VAT is added on top. */
+    taxBehavior: 'inclusive' | 'exclusive' | null;
+    /** What a consumer is shown and charged — the price with VAT at the standard
+     *  rate of `displayTaxCountry` when the price is net; the price itself when
+     *  it already includes VAT. Show this one to buyers. */
+    displayPriceAmount: number | null;
+    displayAnnualPriceAmount: number | null;
+    /** Country whose VAT `displayPriceAmount` uses (the `country` you passed when
+     *  the seller charges the buyer's own rate, else the seller's home country). */
+    displayTaxCountry: string | null;
+}
+interface ListPlansOptions {
+    /** Buyer country, ISO 3166-1 alpha-2 (e.g. 'DE'), for the display prices. */
+    country?: string;
 }
 /** A non-2xx answer or network failure from the Store endpoint. */
 declare class OneloStoreError extends Error {
@@ -553,7 +567,7 @@ declare class StoreClient {
     private readonly opts;
     constructor(opts: StoreClientOptions);
     /** The App's active plans, ordered by sort order. Requires the Secret Key. */
-    listPlans(): Promise<OneloPlan[]>;
+    listPlans(options?: ListPlansOptions): Promise<OneloPlan[]>;
 }
 
 /**

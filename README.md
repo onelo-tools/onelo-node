@@ -168,8 +168,11 @@ Plans with prices, so an admin panel never copies them from the dashboard. `plan
 ```ts
 const plans = await onelo.store.listPlans()
 // [{ plan: 'pro', name: 'Pro', mode: 'subscription', currency: 'eur',
-//    priceAmount: 1900, annualPriceAmount: 19000, trialPeriodDays: 14, ... }]
+//    priceAmount: 1900, annualPriceAmount: 19000, trialPeriodDays: 14,
+//    taxBehavior: 'inclusive', displayPriceAmount: 1900, displayTaxCountry: 'PL', ... }]
 ```
+
+Show buyers `displayPriceAmount` (and `displayAnnualPriceAmount`): it is what they pay. For a net-priced plan (`taxBehavior: 'exclusive'`) `priceAmount` is the net and the display amount adds VAT at the standard rate of `displayTaxCountry`. Pass `listPlans({ country: 'DE' })` to price for a buyer's country when you sell under OSS.
 
 ## Requirements
 

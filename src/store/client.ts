@@ -21,6 +21,21 @@ export interface OneloPlan {
   trialPeriodDays: number | null
   isActive: boolean
   sortOrder: number
+  /** `'exclusive'`: `priceAmount` is a net price and VAT is added on top. */
+  taxBehavior: 'inclusive' | 'exclusive' | null
+  /** What a consumer is shown and charged — the price with VAT at the standard
+   *  rate of `displayTaxCountry` when the price is net; the price itself when
+   *  it already includes VAT. Show this one to buyers. */
+  displayPriceAmount: number | null
+  displayAnnualPriceAmount: number | null
+  /** Country whose VAT `displayPriceAmount` uses (the `country` you passed when
+   *  the seller charges the buyer's own rate, else the seller's home country). */
+  displayTaxCountry: string | null
+}
+
+export interface ListPlansOptions {
+  /** Buyer country, ISO 3166-1 alpha-2 (e.g. 'DE'), for the display prices. */
+  country?: string
 }
 
 /** A non-2xx answer or network failure from the Store endpoint. */
@@ -46,7 +61,7 @@ export class StoreClient {
   constructor(private readonly opts: StoreClientOptions) {}
 
   /** The App's active plans, ordered by sort order. Requires the Secret Key. */
-  async listPlans(): Promise<OneloPlan[]> {
+  async listPlans(options: ListPlansOptions = {}): Promise<OneloPlan[]> {
     if (!this.opts.isSecretKey) {
       throw new Error('onelo.store.listPlans() requires the Secret Key — call it from your server.')
     }
@@ -55,7 +70,8 @@ export class StoreClient {
     if (!doFetch) throw new OneloStoreError('global fetch is unavailable — Node 18+ is required.', null)
     let res: Response
     try {
-      res = await doFetch(`${this.opts.apiUrl}/api/sdk/store/plans`, {
+      const query = options.country ? `?country=${encodeURIComponent(options.country)}` : ''
+      res = await doFetch(`${this.opts.apiUrl}/api/sdk/store/plans${query}`, {
         method: 'GET',
         headers: { 'X-Onelo-Secret-Key': this.opts.key, 'User-Agent': USER_AGENT },
         signal: AbortSignal.timeout(this.opts.requestTimeout),
@@ -89,5 +105,9 @@ function toPlan(p: Record<string, unknown>): OneloPlan {
     trialPeriodDays: (p.trial_period_days as number | null) ?? null,
     isActive: Boolean(p.is_active),
     sortOrder: p.sort_order as number,
+    taxBehavior: (p.tax_behavior as OneloPlan['taxBehavior'] | undefined) ?? null,
+    displayPriceAmount: (p.display_price_amount as number | null | undefined) ?? null,
+    displayAnnualPriceAmount: (p.display_annual_price_amount as number | null | undefined) ?? null,
+    displayTaxCountry: (p.display_tax_country as string | null | undefined) ?? null,
   }
 }

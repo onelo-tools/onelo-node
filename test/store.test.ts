@@ -30,9 +30,28 @@ describe('onelo.store.listPlans()', () => {
       plan: 'pro', name: 'Pro', shortLabel: null, mode: 'subscription', currency: 'eur',
       priceAmount: 1900, annualPriceAmount: 19000, trialPeriodDays: 14,
       isActive: true, sortOrder: 2,
+      taxBehavior: null, displayPriceAmount: null, displayAnnualPriceAmount: null, displayTaxCountry: null,
     }])
     expect(calls[0]!.url).toBe('https://api.example.test/api/sdk/store/plans')
     expect((calls[0]!.init.headers as Record<string, string>)['X-Onelo-Secret-Key']).toBe(SK)
+  })
+
+  it('#988: maps what a buyer pays and sends the buyer country', async () => {
+    const { fetchImpl, calls } = recording(200, {
+      plans: [{
+        plan: 'pro', name: 'Pro', short_label: null, mode: 'subscription', currency: 'pln',
+        price_amount: 4900, annual_price_amount: 49000, trial_period_days: null,
+        is_active: true, sort_order: 1, tax_behavior: 'exclusive',
+        display_price_amount: 6027, display_annual_price_amount: 60270, display_tax_country: 'PL',
+      }],
+    })
+    const onelo = new Onelo({ secretKey: SK, apiUrl: 'https://api.example.test', fetchImpl })
+    const [p] = await onelo.store.listPlans({ country: 'PL' })
+    expect(p).toMatchObject({
+      priceAmount: 4900, taxBehavior: 'exclusive', displayPriceAmount: 6027,
+      displayAnnualPriceAmount: 60270, displayTaxCountry: 'PL',
+    })
+    expect(calls[0]!.url).toBe('https://api.example.test/api/sdk/store/plans?country=PL')
   })
 
   it('refuses a publishable key before any request', async () => {

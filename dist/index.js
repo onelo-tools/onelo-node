@@ -95,7 +95,7 @@ var FeatureCache = class {
 };
 
 // src/version.ts
-var VERSION = "0.11.0";
+var VERSION = "0.12.0";
 
 // src/features/consumer.ts
 var SDK_PLATFORM = "node";
@@ -2119,7 +2119,7 @@ var StoreClient = class {
   }
   opts;
   /** The App's active plans, ordered by sort order. Requires the Secret Key. */
-  async listPlans() {
+  async listPlans(options = {}) {
     if (!this.opts.isSecretKey) {
       throw new Error("onelo.store.listPlans() requires the Secret Key \u2014 call it from your server.");
     }
@@ -2127,7 +2127,8 @@ var StoreClient = class {
     if (!doFetch) throw new OneloStoreError("global fetch is unavailable \u2014 Node 18+ is required.", null);
     let res;
     try {
-      res = await doFetch(`${this.opts.apiUrl}/api/sdk/store/plans`, {
+      const query = options.country ? `?country=${encodeURIComponent(options.country)}` : "";
+      res = await doFetch(`${this.opts.apiUrl}/api/sdk/store/plans${query}`, {
         method: "GET",
         headers: { "X-Onelo-Secret-Key": this.opts.key, "User-Agent": USER_AGENT },
         signal: AbortSignal.timeout(this.opts.requestTimeout)
@@ -2158,7 +2159,11 @@ function toPlan(p) {
     annualPriceAmount: p.annual_price_amount ?? null,
     trialPeriodDays: p.trial_period_days ?? null,
     isActive: Boolean(p.is_active),
-    sortOrder: p.sort_order
+    sortOrder: p.sort_order,
+    taxBehavior: p.tax_behavior ?? null,
+    displayPriceAmount: p.display_price_amount ?? null,
+    displayAnnualPriceAmount: p.display_annual_price_amount ?? null,
+    displayTaxCountry: p.display_tax_country ?? null
   };
 }
 
